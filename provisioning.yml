@@ -1,0 +1,107 @@
+---
+- hosts: wordpress
+  handlers:
+    - name: restart apache
+      service: 
+        name: apache2
+        state: restarted
+      become: yes
+
+  tasks: 
+    - name: Install dependencies 
+      ansible.builtin.apt:
+        pkg:
+        - apache2
+        - ghostscript 
+        - libapache2-mod-php 
+        - mysql-server 
+        - php 
+        - php-bcmath 
+        - php-curl 
+        - php-imagick 
+        - php-intl 
+        - php-json 
+        - php-mbstring 
+        - php-mysql 
+        - php-xml 
+        - php-zip
+        - python3-pymysql
+        state: latest
+        update_cache: yes
+      become: yes
+
+    - name: Create a directory if it does not exist
+      ansible.builtin.file:
+        path: /srv/www
+        state: directory
+        owner: www-data
+        group: www-data
+      become: yes
+
+    - name: Unarchive a file that needs to be downloaded (added in 2.0)
+      ansible.builtin.unarchive:
+        src: https://wordpress.org/latest.tar.gz
+        dest: /srv/www
+        remote_src: yes
+      become: yes
+
+    - name: Copy file with owner and permissions
+      ansible.builtin.copy:
+          src: files/wordpress.conf
+          dest: /etc/apache2/sites-available/000-default.conf
+      become: yes 
+      notify: 
+        - restart apache
+
+    - name: Create a new database with name 'wordpress_db'
+      community.mysql.mysql_db:
+        name: wordpress_db
+        state: present
+        login_unix_socket: /run/mysqld/mysqld.sock
+      become: yes
+
+    - name: Create database user with name 'wordpress_user' and password '12345' with all database privileges
+      community.mysql.mysql_user:
+       name: wordpress_user
+       password: 12345
+       priv: 'wordpress_db.*:SELECT,INSERT,UPDATE,DELETE,CREATE,DROP,ALTER'
+       state: present
+       login_unix_socket: /run/mysqld/mysqld.sock
+      become: yes 
+
+    - name: Copy file with owner and permissions
+      ansible.builtin.copy:
+          src: /srv/www/wordpress/wp-config-sample.php
+          dest: /srv/www/wordpress/wp-config.php
+          force: no 
+          remote_src: yes
+      become: yes 
+    
+    - name: configure wp-config with database 
+      ansible.builtin.replace:
+        path: /srv/www/wordpress/wp-config.php
+        regexp: '{{ item.regexp }}'
+        replace: '{{ item.replace }}'
+      with_items: 
+      - {regexp: "database_name_here", replace: "wordpress_db"}
+      - {regexp: "username_here", replace: "wordpress_user"}
+      - {regexp: "password_here", replace: "12345"}
+      become: yes
+    
+    - name: Replace a localhost entry searching for a literal string to avoid escaping
+      ansible.builtin.lineinfile:
+       path: /srv/www/wordpress/wp-config.php
+       search_string: '{{ item.search_string }}'
+       line:  '{{ item.line }}'
+      with_items: 
+      - {search_string: "define( 'AUTH_KEY',         'put your unique phrase here' );", line: "define('AUTH_KEY',         'A [6UO+L?#|@dtD;[?O~T(P6VgY/=gDy>y|o+_Xi<|&8:1;9b)|jkAf3?V`lmBgt');"}
+      - {search_string: "define( 'SECURE_AUTH_KEY',  'put your unique phrase here' );", line: "define('SECURE_AUTH_KEY',  '-`5R{tj$?t??XygR+L#VNFs##^ciG|s1,_=i>-T|d6%pXYp)|tic_@+}2lt`X52*');"}
+      - {search_string: "define( 'LOGGED_IN_KEY',    'put your unique phrase here' );", line: "define('LOGGED_IN_KEY',    'S8`u*[v{-H!iHG%c*@?SR%8%wxA*H[1ZTG2!M5x~_bh9Y7qYHyI5K}NGajtUMw0T');"}
+      - {search_string: "define( 'NONCE_KEY',        'put your unique phrase here' );", line: "define('NONCE_KEY',        '01fEm)ygsz4*FbX{1Ix,_R69FNH-wY^gBE&@-xuURRZWFH3!.B>+4-x7_+Hxq{eU');"}
+      - {search_string: "define( 'AUTH_SALT',        'put your unique phrase here' );", line: "define('AUTH_SALT',        '@PCZr1<AJ|Mt_-oi3Q9v_VPaRLMZR7ivnEOuJ?>=Y%K6%7}/NB<Zi)tCn2QXs5OC');"}
+      - {search_string: "define( 'SECURE_AUTH_SALT', 'put your unique phrase here' );", line: "define('SECURE_AUTH_SALT', 'eP39:Pn%xx])MmG4_Jlyd#L.saRi_~rpQDR].~`3xJd #fD*x_z<Z1Y3&d:]9S1+');"}
+      - {search_string: "define( 'LOGGED_IN_SALT',   'put your unique phrase here' );", line: "define('LOGGED_IN_SALT',   'W9|LK%,%>3rDw/QeZ$__ypFf;L@A8xe3-K|P|Y1V~5e~P,x(+XxS56fAZqDYP=t[');"}
+      - {search_string: "define( 'NONCE_SALT',       'put your unique phrase here' );", line: "define('NONCE_SALT',       '@aU=:#|5NLwm^Yrv=}m|!L|U2Fw.yHD  5Bd!IK)epN:7>ZXKTh-2qPuiD,~:sZ#');"}
+      become: yes
+       
+      
